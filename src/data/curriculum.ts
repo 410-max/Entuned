@@ -635,7 +635,7 @@ export const CURRICULUM_UNITS: Unit[] = [
             timeSignature: [4, 4],
             measureCount: 2,
             pattern: [1, 1, 1, 1],
-            targetTaps: 4,
+            targetTaps: 8,
             prompt: 'Tap along on every beat in 4/4 time (1 - 2 - 3 - 4).',
             conceptTag: 'Pulse Tracking',
             explanation: 'Solid steady pulse! Maintaining internal meter is foundational to all music.',
