@@ -1,0 +1,6 @@
+{
+  "name": "Entuned",
+  "description": "An interactive, gamified music theory learning app with bite-sized lessons, interactive piano, sheet music notation, and ear training.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
