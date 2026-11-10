@@ -72,7 +72,9 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
 
   // Rhythm tap exercise state
   const [rhythmMetronomeActive, setRhythmMetronomeActive] = useState<boolean>(false);
-  const [rhythmTapCount, setRhythmTapCount] = useState<number>(0);
+  const [rhythmTapTimes, setRhythmTapTimes] = useState<number[]>([]);
+  const [rhythmStartTime, setRhythmStartTime] = useState<number | null>(null);
+  const rhythmTapCount = rhythmTapTimes.length;
 
   const currentExercise = currentStep >= 0 && currentStep < exercises.length ? exercises[currentStep] : null;
 
@@ -83,9 +85,10 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
     const intervalMs = (60 / rhythmEx.bpm) * 1000;
 
     let beat = 0;
+    sound.playMetronomeClick(true);
     const timer = setInterval(() => {
-      beat = (beat % 4) + 1;
-      sound.playMetronomeClick(beat === 1);
+      beat = (beat + 1) % rhythmEx.pattern.length;
+      sound.playMetronomeClick(beat === 0);
     }, intervalMs);
 
     return () => clearInterval(timer);
@@ -116,7 +119,30 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
           spelledNotes.every((n, i) => n === cs.targetNotes[i]);
       } else if (currentExercise.type === 'rhythm_tap') {
         const rh = currentExercise as RhythmTapExercise;
-        correct = rhythmTapCount >= rh.targetTaps;
+        const beatMs = 60000 / rh.bpm;
+        const expectedBeats = Array.from({ length: rh.measureCount }, (_, measure) =>
+          rh.pattern.map((hit, beat) => hit ? (measure * rh.pattern.length + beat) * beatMs : null)
+        ).flat().filter((offset): offset is number => offset !== null);
+        const toleranceMs = beatMs * 0.28;
+        const matched = new Set<number>();
+        correct = rhythmStartTime !== null &&
+          expectedBeats.length === rh.targetTaps &&
+          rhythmTapTimes.length === expectedBeats.length &&
+          rhythmTapTimes.every((tapTime) => {
+            const offset = tapTime - rhythmStartTime!;
+            let closestIndex = -1;
+            let closestDistance = Infinity;
+            expectedBeats.forEach((expected, index) => {
+              const distance = Math.abs(offset - expected);
+              if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = index;
+              }
+            });
+            if (closestDistance > toleranceMs || matched.has(closestIndex)) return false;
+            matched.add(closestIndex);
+            return true;
+          }) && matched.size === expectedBeats.length;
       }
 
       setIsCorrect(correct);
@@ -144,7 +170,8 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
       isAnswerChecked,
       selectedOption,
       spelledNotes,
-      rhythmTapCount,
+      rhythmTapTimes,
+      rhythmStartTime,
       progress,
       lesson,
       checkpoint,
@@ -182,7 +209,8 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
     setSelectedOption(null);
     setSpelledNotes([]);
     setRhythmMetronomeActive(false);
-    setRhythmTapCount(0);
+    setRhythmTapTimes([]);
+    setRhythmStartTime(null);
 
     const next = currentStep + 1;
     if (next < exercises.length) {
@@ -561,7 +589,17 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
                   <div className="flex justify-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setRhythmMetronomeActive((prev) => !prev)}
+                      onClick={() => {
+                        if (rhythmMetronomeActive) {
+                          setRhythmMetronomeActive(false);
+                          setRhythmStartTime(null);
+                          setRhythmTapTimes([]);
+                        } else {
+                          setRhythmTapTimes([]);
+                          setRhythmStartTime(Date.now());
+                          setRhythmMetronomeActive(true);
+                        }
+                      }}
                       className={`px-4 py-2 text-xs font-semibold rounded-md border btn-tactile ${
                         rhythmMetronomeActive
                           ? 'bg-cyan-500 text-slate-950 border-cyan-400'
@@ -576,13 +614,14 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
                   <div className="pt-2">
                     <button
                       type="button"
+                      disabled={!rhythmMetronomeActive || isAnswerChecked}
                       onClick={() => {
                         sound.playSoftTap();
-                        setRhythmTapCount((prev) => prev + 1);
+                        setRhythmTapTimes((prev) => [...prev, Date.now()]);
                       }}
                       className="w-28 h-28 mx-auto rounded-full bg-gradient-to-br from-cyan-600 to-cyan-800 active:scale-95 border-2 border-cyan-300 text-white text-base font-bold shadow-xl shadow-cyan-950 flex flex-col items-center justify-center btn-tactile"
                     >
-                      <span>TAP</span>
+                      <span>{rhythmMetronomeActive ? 'TAP' : 'START METRONOME FIRST'}</span>
                       <span className="text-xs font-normal opacity-80 font-mono-numbers">
                         {rhythmTapCount} / {(currentExercise as RhythmTapExercise).targetTaps}
                       </span>
@@ -731,7 +770,7 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
                       : currentExercise?.type === 'chord_spell'
                       ? spelledNotes.length !== (currentExercise as ChordSpellExercise).targetNotes.length
                       : currentExercise?.type === 'rhythm_tap'
-                      ? rhythmTapCount === 0
+                      ? !rhythmMetronomeActive || rhythmTapCount === 0
                       : false
                   }
                   onClick={() => handleCheckAnswer()}
