@@ -47,6 +47,7 @@ class SoundEngine {
   private isMuted: boolean = false;
   private sfxEnabled: boolean = true;
   private masterGain: GainNode | null = null;
+  private volume: number = 0.7;
   private currentVoice: 'felt_piano' | 'bright_bell' | 'warm_reed' = 'felt_piano';
   private activeVoices: Map<string, { stop: () => void }> = new Map();
 
@@ -57,7 +58,7 @@ class SoundEngine {
       if (AudioCtx) {
         this.ctx = new AudioCtx();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(0.7, this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
         this.masterGain.connect(this.ctx.destination);
       }
     }
@@ -70,7 +71,7 @@ class SoundEngine {
   public setMuted(muted: boolean) {
     this.isMuted = muted;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(muted ? 0 : 0.7, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(muted ? 0 : this.volume, this.ctx.currentTime);
     }
   }
 
@@ -83,9 +84,9 @@ class SoundEngine {
   }
 
   public setVolume(vol: number) {
-    if (this.masterGain && this.ctx && !this.isMuted) {
-      const clamped = Math.max(0, Math.min(1, vol));
-      this.masterGain.gain.setValueAtTime(clamped, this.ctx.currentTime);
+    this.volume = Math.max(0, Math.min(1, vol));
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
     }
   }
 
