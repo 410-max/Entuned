@@ -592,11 +592,11 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
                       onClick={() => {
                         if (rhythmMetronomeActive) {
                           setRhythmMetronomeActive(false);
-                          setRhythmStartTime(null);
-                          setRhythmTapTimes([]);
                         } else {
-                          setRhythmTapTimes([]);
-                          setRhythmStartTime(Date.now());
+                          if (rhythmStartTime === null) {
+                            setRhythmTapTimes([]);
+                            setRhythmStartTime(Date.now());
+                          }
                           setRhythmMetronomeActive(true);
                         }
                       }}
@@ -770,7 +770,7 @@ export const ExerciseHost: React.FC<ExerciseHostProps> = ({
                       : currentExercise?.type === 'chord_spell'
                       ? spelledNotes.length !== (currentExercise as ChordSpellExercise).targetNotes.length
                       : currentExercise?.type === 'rhythm_tap'
-                      ? !rhythmMetronomeActive || rhythmTapCount === 0
+                      ? rhythmStartTime === null || rhythmTapCount === 0
                       : false
                   }
                   onClick={() => handleCheckAnswer()}
