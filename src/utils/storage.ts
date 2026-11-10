@@ -29,7 +29,7 @@ const INITIAL_ACHIEVEMENTS: Achievement[] = [
     title: 'Consistent Ear',
     description: 'Reach a 3-day practice streak',
     icon: 'Flame',
-    progress: 1,
+    progress: 0,
     maxProgress: 3,
   },
   {
@@ -51,7 +51,19 @@ const INITIAL_ACHIEVEMENTS: Achievement[] = [
 ];
 
 function getDayString(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getCalendarDayDifference(from: string, to: string): number {
+  if (!from) return Infinity;
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
+  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  const fromUtc = Date.UTC(fromYear, fromMonth - 1, fromDay);
+  const toUtc = Date.UTC(toYear, toMonth - 1, toDay);
+  return Math.round((toUtc - fromUtc) / 86400000);
 }
 
 function getWeeklyDays(): { day: string; active: boolean; date: string }[] {
@@ -68,7 +80,7 @@ function getWeeklyDays(): { day: string; active: boolean; date: string }[] {
     return {
       day: dayName,
       date: dateStr,
-      active: idx <= currentDayIndex && idx === currentDayIndex,
+      active: false,
     };
   });
 }
@@ -83,8 +95,8 @@ export function getDefaultProgress(): UserProgress {
     completedCheckpointIds: [],
     checkpointScores: {},
     xp: 0,
-    streak: 1,
-    lastActiveDate: todayStr,
+    streak: 0,
+    lastActiveDate: '',
     weeklyActivity: getWeeklyDays(),
     hearts: 5,
     lastHeartRegenTime: Date.now(),
@@ -112,26 +124,11 @@ export function loadProgress(): UserProgress {
     if (!raw) return getDefaultProgress();
     const parsed = JSON.parse(raw) as UserProgress;
 
-    // Check if daily XP needs reset for new day
+    // Reset the daily XP counter on a new local calendar day.
+    // Streaks and activity are updated only by an actual completed lesson.
     const todayStr = getDayString(new Date());
     if (parsed.lastActiveDate !== todayStr) {
-      // Calculate streak continuation
-      const lastDate = new Date(parsed.lastActiveDate);
-      const today = new Date(todayStr);
-      const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 3600 * 24));
-
-      if (diffDays === 1) {
-        parsed.streak += 1;
-      } else if (diffDays > 1) {
-        parsed.streak = 1;
-      }
-      parsed.lastActiveDate = todayStr;
       parsed.todayXp = 0;
-
-      // Update weekly activity current day
-      parsed.weeklyActivity = parsed.weeklyActivity.map((w) =>
-        w.date === todayStr ? { ...w, active: true } : w
-      );
     }
 
     // Passive heart regen: 1 heart per 20 minutes if under 5
@@ -176,9 +173,25 @@ export function recordLessonCompletion(
   lessonId: string,
   xpEarned: number
 ): UserProgress {
-  const nextCompletedLessons = Array.from(new Set([...currentProgress.completedLessonIds, lessonId]));
-  const nextXp = currentProgress.xp + xpEarned;
-  const nextTodayXp = currentProgress.todayXp + xpEarned;
+  const alreadyCompleted = currentProgress.completedLessonIds.includes(lessonId);
+  const todayStr = getDayString(new Date());
+  const dayDifference = getCalendarDayDifference(currentProgress.lastActiveDate, todayStr);
+  const nextStreak = currentProgress.lastActiveDate === todayStr
+    ? currentProgress.streak
+    : dayDifference === 1
+      ? currentProgress.streak + 1
+      : 1;
+  const awardedXp = alreadyCompleted ? 0 : xpEarned;
+  const nextCompletedLessons = alreadyCompleted
+    ? currentProgress.completedLessonIds
+    : [...currentProgress.completedLessonIds, lessonId];
+  const nextXp = currentProgress.xp + awardedXp;
+  const nextTodayXp = (currentProgress.lastActiveDate === todayStr ? currentProgress.todayXp : 0) + awardedXp;
+  const weeklyActivity = getWeeklyDays().map((day) => ({
+    ...day,
+    active: day.date === todayStr ||
+      currentProgress.weeklyActivity.some((previous) => previous.date === day.date && previous.active),
+  }));
 
   // Find next lesson to unlock
   let nextLessonId = currentProgress.currentLessonId;
@@ -211,6 +224,9 @@ export function recordLessonCompletion(
     currentUnitId: nextUnitId,
     xp: nextXp,
     todayXp: nextTodayXp,
+    streak: nextStreak,
+    lastActiveDate: todayStr,
+    weeklyActivity,
     achievements: updatedAchievements,
   };
 
@@ -253,12 +269,15 @@ export function evaluateCheckpointQuiz(
 
   if (passed) {
     // Checkpoint Passed!
+    const alreadyCompleted = updatedProgress.completedCheckpointIds.includes(checkpointId);
     const nextCompletedCheckpoints = Array.from(
       new Set([...updatedProgress.completedCheckpointIds, checkpointId])
     );
     updatedProgress.completedCheckpointIds = nextCompletedCheckpoints;
-    updatedProgress.xp += xpReward;
-    updatedProgress.todayXp += xpReward;
+    if (!alreadyCompleted) {
+      updatedProgress.xp += xpReward;
+      updatedProgress.todayXp += xpReward;
+    }
 
     // If unit exam passed, unlock next unit
     if (!isMidUnit && unitId < CURRICULUM_UNITS.length) {
